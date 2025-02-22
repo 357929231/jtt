@@ -1,3 +1,4 @@
+import { getModelList } from '@/services/ai'
 import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -12,6 +13,7 @@ export const useAIStore = defineStore(`ai`, () => {
   const maxLength = useStorage<number>(`md-ai-max-length`, 2048)
   const isGenerating = ref(false)
   const settingsDialogVisible = ref(false)
+  const availableModels = useStorage<string[]>(`md-ai-available-models`, [])
 
   // 保存API Key
   function setApiKey(key: string) {
@@ -58,6 +60,31 @@ export const useAIStore = defineStore(`ai`, () => {
     isGenerating.value = status
   }
 
+  // 获取可用模型列表
+  async function fetchAvailableModels() {
+    if (apiKey.value && apiDomain.value) {
+      try {
+        const apiDomainValue = apiDomain.value.endsWith(`/`) ? apiDomain.value : `${apiDomain.value}/`
+        availableModels.value = await getModelList(`${apiDomainValue}v1/models`, apiKey.value)
+
+        // 默认选择第一个模型
+        if (availableModels.value.length > 0) {
+          selectedModel.value = availableModels.value[0]
+        }
+      }
+      catch (error) {
+        console.error(`Failed to fetch models:`, error)
+        // Optionally, set availableModels to an empty array or a default list
+        availableModels.value = []
+        throw error // Re-throw to allow the component to handle the error as well
+      }
+    }
+    else {
+      availableModels.value = []
+      selectedModel.value = `gpt-3.5-turbo` // 恢复默认模型
+    }
+  }
+
   return {
     apiKey,
     selectedModel,
@@ -68,6 +95,7 @@ export const useAIStore = defineStore(`ai`, () => {
     maxLength,
     isGenerating,
     settingsDialogVisible,
+    availableModels,
     setApiKey,
     selectModel,
     setCustomModel,
@@ -77,5 +105,6 @@ export const useAIStore = defineStore(`ai`, () => {
     setTemperature,
     setMaxLength,
     setGenerating,
+    fetchAvailableModels,
   }
 })

@@ -1,5 +1,3 @@
-import { useAIStore } from '@/stores'
-
 export interface AIStreamOptions {
   prompt: string | Array<{ role: string, content: string }> | {
     system?: string
@@ -8,6 +6,34 @@ export interface AIStreamOptions {
   onToken?: (token: string) => void
   onError?: (error: Error) => void
   onFinish?: () => void
+}
+
+export async function getModelList(endpoint: string, token: string): Promise<string[]> {
+  try {
+    const response = await fetch(endpoint, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch model list: ${response.status} - ${response.statusText}`)
+    }
+
+    const data = await response.json()
+
+    // 提取模型 ID 列表
+    if (data && data.data && Array.isArray(data.data)) {
+      return data.data.map((model: { id: string }) => model.id);
+    } else {
+      console.warn("Unexpected model list format:", data);
+      return [];
+    }
+  }
+  catch (error) {
+    console.error(`Error fetching model list:`, error)
+    return []
+  }
 }
 
 export async function streamAIContent({
@@ -20,12 +46,14 @@ export async function streamAIContent({
   aiStore.setGenerating(true)
 
   try {
+    const headers: HeadersInit = {
+      'Content-Type': `application/json`,
+      'Authorization': `Bearer ${aiStore.apiKey}`, // Default API key
+    }
+
     const response = await fetch(`${aiStore.apiDomain}/v1/chat/completions`, {
       method: `POST`,
-      headers: {
-        'Content-Type': `application/json`,
-        'Authorization': `Bearer ${aiStore.apiKey}`,
-      },
+      headers,
       body: JSON.stringify({
         model: aiStore.customModel || aiStore.selectedModel,
         messages: [
@@ -214,12 +242,14 @@ export function generateCssRewritePrompt(options: {
 export async function callAI(prompt: string): Promise<string> {
   const aiStore = useAIStore()
   try {
+    const headers: HeadersInit = {
+      'Content-Type': `application/json`,
+      'Authorization': `Bearer ${aiStore.apiKey}`, // Default API key
+    }
+
     const response = await fetch(`${aiStore.apiDomain}/v1/chat/completions`, {
       method: `POST`,
-      headers: {
-        'Content-Type': `application/json`,
-        'Authorization': `Bearer ${aiStore.apiKey}`,
-      },
+      headers,
       body: JSON.stringify({
         model: aiStore.customModel || aiStore.selectedModel,
         messages: [{ role: `user`, content: prompt }],

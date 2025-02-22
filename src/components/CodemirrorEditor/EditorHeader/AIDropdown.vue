@@ -2,7 +2,7 @@
 import { useAIStore } from '@/stores'
 import { BrainCircuit, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Button } from '../../../components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog'
 import { Input } from '../../../components/ui/input'
@@ -11,7 +11,7 @@ import { MenubarContent, MenubarItem, MenubarMenu, MenubarTrigger } from '../../
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select'
 
 const aiStore = useAIStore()
-const useCustomModel = ref(false)
+const fetchingModels = ref(false)
 
 const {
   apiKey,
@@ -23,17 +23,50 @@ const {
   maxLength,
   isGenerating,
   settingsDialogVisible,
+  availableModels,
 } = storeToRefs(aiStore)
 
+const showCustomModelInput = ref(false)
+
 function toggleCustomModel() {
-  useCustomModel.value = !useCustomModel.value
-  if (!useCustomModel.value) {
+  showCustomModelInput.value = !showCustomModelInput.value
+  if (!showCustomModelInput.value) {
     selectedModel.value = `gpt-3.5-turbo`
   }
-  else {
-    selectedModel.value = customModel.value || ``
+}
+
+async function fetchModels() {
+  fetchingModels.value = true
+  try {
+    await aiStore.fetchAvailableModels()
+  }
+  catch (error) {
+    console.error(`Failed to fetch models:`, error)
+    // Handle error appropriately, e.g., display an error message to the user
+  }
+  finally {
+    fetchingModels.value = false
   }
 }
+
+// 计算属性，用于根据 apiKey 和 apiDomain 的状态返回不同的模型列表
+const modelList = computed(() => {
+  if (!apiKey.value && !apiDomain.value) {
+    return [`gpt-3.5-turbo`, `gpt-4`]
+  }
+  return availableModels.value
+})
+
+// 监听 apiKey 和 apiDomain 的变化
+watch(
+  [apiKey, apiDomain],
+  ([newApiKey, newApiDomain]) => {
+    if (!newApiKey && !newApiDomain) {
+      selectedModel.value = `gpt-3.5-turbo`
+    }
+  },
+  { immediate: true } // 立即执行一次，确保初始状态正确
+)
 </script>
 
 <template>
@@ -78,11 +111,11 @@ function toggleCustomModel() {
         <div class="grid gap-2">
           <Label for="apiDomain">API 地址</Label>
           <div class="flex items-center gap-2">
-            <Input
-              id="apiDomain"
-              v-model="apiDomain"
-              placeholder="https://api.puzhehei.top"
-            />
+          <Input
+            id="apiDomain"
+            v-model="apiDomain"
+            placeholder="https://api.puzhehei.top"
+          />
           </div>
           <p class="text-muted-foreground text-xs">
             输入 https或http加域名，系统会自动补全完整路径，如：https://api.puzhehei.top
@@ -94,34 +127,43 @@ function toggleCustomModel() {
           <Label>模型</Label>
           <div class="flex flex-wrap items-center gap-2">
             <Select
-              v-if="!useCustomModel"
+              v-if="!showCustomModelInput"
               v-model="selectedModel"
+              class="flex-1"
             >
               <SelectTrigger class="flex-1">
                 <SelectValue placeholder="选择模型" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gpt-3.5-turbo">
-                  GPT-3.5 Turbo
-                </SelectItem>
-                <SelectItem value="gpt-4">
-                  GPT-4
+                <SelectItem
+                  v-for="model in modelList"
+                  :key="model"
+                  :value="model"
+                >
+                  {{ model }}
                 </SelectItem>
               </SelectContent>
             </Select>
             <Input
-              v-else
-              v-model="selectedModel"
+              v-else-if="showCustomModelInput"
+              v-model="customModel"
               placeholder="输入自定义模型名称"
               class="flex-1"
             />
             <Button
               variant="outline"
+              :disabled="fetchingModels"
+              @click="fetchModels"
+            >
+              {{ fetchingModels ? '正在获取' : '获取模型' }}
+            </Button>
+            <Button
+              variant="outline"
               class="whitespace-nowrap"
-              :class="{ 'border-primary': useCustomModel }"
+              :class="{ 'border-primary': showCustomModelInput }"
               @click="toggleCustomModel"
             >
-              自定义模型
+              {{ showCustomModelInput ? '取消自定义' : '自定义模型' }}
             </Button>
           </div>
         </div>
