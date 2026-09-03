@@ -86,7 +86,7 @@
 
 ### 1. 获取 API Key
 当前免费提供（只能使用gpt-3.5-turbo）：sk-GXdHfAUByeKFBu2BSHbcHI5Y2RYNRtJZ9rmQv5iyK3f1zEaw
-1. 访问[天马座 API](https://api.puzhehei.top/) 官网
+1. 访问[小狐星 API](https://api.xiaohuxing.eu.org/) 官网
 2. 注册/登录您的账号
 3. 在个人中心获取您的 API Key
 4. 复制并保存您的 API Key（以 sk- 开头）

@@ -56,3 +56,9 @@ components.d.ts
 .wxt
 .output
 web-ext.config.ts
+
+# local agent/dev artifacts
+.playwright-cli/
+.worktrees/
+.vite-dev.*.log
+docs/superpowers/

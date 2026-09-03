@@ -27,11 +27,16 @@ export const useAIModelsStore = defineStore(`aiModels`, () => {
     aiModelsService.setBaseUrl(url)
   }
 
+  function setApiKey(key: string) {
+    aiModelsService.setApiKey(key)
+  }
+
   return {
     models,
     isLoading,
     error,
     fetchModels,
     setApiBaseUrl,
+    setApiKey,
   }
 })

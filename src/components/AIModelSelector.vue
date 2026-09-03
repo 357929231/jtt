@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import { useAIStore } from '../stores/ai'
 import { useAIModelsStore } from '../stores/aiModels'
 import { Button } from './ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
@@ -13,9 +14,12 @@ const { modelId } = defineProps({
 
 const emit = defineEmits([`update:modelId`])
 
+const aiStore = useAIStore()
 const aiModelsStore = useAIModelsStore()
 
 onMounted(async () => {
+  aiModelsStore.setApiBaseUrl(aiStore.connection.baseUrl)
+  aiModelsStore.setApiKey(aiStore.connection.apiKey)
   await aiModelsStore.fetchModels()
 })
 

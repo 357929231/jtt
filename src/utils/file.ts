@@ -7,7 +7,6 @@ import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import Buffer from 'buffer-from'
 import COS from 'cos-js-sdk-v5'
 import CryptoJS from 'crypto-js'
-import * as Minio from 'minio'
 import * as qiniu from 'qiniu-js'
 import OSS from 'tiny-oss'
 import { v4 as uuidv4 } from 'uuid'
@@ -258,49 +257,6 @@ async function txCOSFileUpload(file: File) {
 }
 
 // -----------------------------------------------------------------------
-// Minio File Upload
-// -----------------------------------------------------------------------
-
-async function minioFileUpload(content: string, filename: string) {
-  const dateFilename = getDateFilename(filename)
-  const { endpoint, port, useSSL, bucket, accessKey, secretKey } = JSON.parse(
-    localStorage.getItem(`minioConfig`)!,
-  )
-  const buffer = Buffer(content, `base64`)
-  const conf: Minio.ClientOptions = {
-    endPoint: endpoint,
-    useSSL,
-    accessKey,
-    secretKey,
-  }
-  const p = Number(port || 0)
-  const isCustomPort = p > 0 && p !== 80 && p !== 443
-  if (isCustomPort) {
-    conf.port = p
-  }
-  return new Promise<string>((resolve, reject) => {
-    const minioClient = new Minio.Client(conf)
-    try {
-      minioClient.putObject(bucket, dateFilename, buffer, (e) => {
-        if (e) {
-          reject(e)
-        }
-        const host = `${useSSL ? `https://` : `http://`}${endpoint}${
-          isCustomPort ? `:${port}` : ``
-        }`
-        const url = `${host}/${bucket}/${dateFilename}`
-        // console.log("文件上传成功: ", url)
-        resolve(url)
-        // return `${endpoint}/${bucket}/${dateFilename}`;
-      })
-    }
-    catch (e) {
-      reject(e)
-    }
-  })
-}
-
-// -----------------------------------------------------------------------
 // mp File Upload
 // -----------------------------------------------------------------------
 interface MpResponse {
@@ -449,8 +405,6 @@ function fileUpload(content: string, file: File) {
   switch (imgHost) {
     case `aliOSS`:
       return aliOSSFileUpload(file)
-    case `minio`:
-      return minioFileUpload(content, file.name)
     case `txCOS`:
       return txCOSFileUpload(file)
     case `qiniu`:

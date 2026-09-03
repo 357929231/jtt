@@ -40,14 +40,14 @@ const formatOptions = ref<Format[]>([`rgb`, `hex`, `hsl`, `hsv`])
 
 <template>
   <div
-    class="overflow-hidden bg-gray/20 transition-width duration-300 dark:bg-gray/40"
+    class="settings-panel overflow-hidden bg-gray/20 transition-width duration-300 dark:bg-gray/40"
     :class="{
-      'w-0': !store.isOpenRightSlider,
-      'w-100': store.isOpenRightSlider,
+      'settings-panel--open': store.isOpenRightSlider,
+      'settings-panel--closed': !store.isOpenRightSlider,
     }"
   >
     <div
-      class="space-y-4 h-full overflow-auto p-4 transition-transform" :class="{
+      class="settings-panel__content space-y-4 h-full overflow-auto p-4 transition-transform" :class="{
         'translate-x-0': store.isOpenRightSlider,
         'translate-x-full': !store.isOpenRightSlider,
       }"
@@ -272,5 +272,70 @@ const formatOptions = ref<Format[]>([`rgb`, `hex`, `hsl`, `hsv`])
 </template>
 
 <style scoped lang="less">
+.settings-panel {
+  --settings-panel-width: 360px;
+  flex: 0 0 auto;
+  width: 0;
+  min-width: 0;
+  max-width: var(--settings-panel-width);
+  border-left: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  box-shadow: -16px 0 32px rgba(15, 23, 42, 0.06);
+}
 
+.settings-panel--open {
+  width: var(--settings-panel-width);
+}
+
+.settings-panel--closed {
+  pointer-events: none;
+}
+
+.settings-panel__content {
+  width: var(--settings-panel-width);
+  border-left: 1px solid hsl(var(--background));
+}
+
+.settings-panel__content h2 {
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.settings-panel__content > div {
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.22);
+  padding: 12px;
+}
+
+@media (max-width: 768px) {
+  .settings-panel {
+    position: fixed;
+    top: 164px;
+    right: 8px;
+    bottom: 8px;
+    z-index: 1002;
+    width: min(var(--settings-panel-width), calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    box-shadow: -12px 0 30px rgba(0, 0, 0, 0.18);
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+  }
+
+  .settings-panel--open {
+    transform: translateX(0);
+  }
+
+  .settings-panel--closed {
+    transform: translateX(100%);
+  }
+
+  .settings-panel__content {
+    width: 100%;
+  }
+}
 </style>

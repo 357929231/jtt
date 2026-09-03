@@ -337,9 +337,8 @@ export function removeLeft(str: string) {
   return lines.map(item => item.slice(minSpaceNum)).join(`\n`)
 }
 
-export function solveWeChatImage() {
-  const clipboardDiv = document.getElementById(`output`)!
-  const images = clipboardDiv.getElementsByTagName(`img`)
+export function solveWeChatImage(container: HTMLElement) {
+  const images = container.getElementsByTagName(`img`)
 
   Array.from(images).forEach((image) => {
     const width = image.getAttribute(`width`)!
@@ -379,8 +378,9 @@ export function modifyHtmlStructure(htmlString: string): string {
   return tempDiv.innerHTML
 }
 
-export function processClipboardContent(primaryColor: string) {
-  const clipboardDiv = document.getElementById(`output`)!
+export function processClipboardContent(html: string, primaryColor: string) {
+  const clipboardDiv = document.createElement(`div`)
+  clipboardDiv.innerHTML = html
 
   // 先合并 CSS 和修改 HTML 结构
   clipboardDiv.innerHTML = modifyHtmlStructure(mergeCss(clipboardDiv.innerHTML))
@@ -398,7 +398,7 @@ export function processClipboardContent(primaryColor: string) {
     )
 
   // 处理图片大小
-  solveWeChatImage()
+  solveWeChatImage(clipboardDiv)
 
   // 添加空白节点用于兼容 SVG 复制
   const beforeNode = createEmptyNode()
@@ -422,4 +422,6 @@ export function processClipboardContent(primaryColor: string) {
     grand.innerHTML = ``
     grand.appendChild(section)
   })
+
+  return clipboardDiv.innerHTML
 }

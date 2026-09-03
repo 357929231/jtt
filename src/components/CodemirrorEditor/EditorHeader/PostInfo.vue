@@ -36,7 +36,7 @@ async function prePost() {
     markdown: ``,
     accounts: [],
   }
-  const accounts = allAccounts.value.filter(a => ![`weixin`, `ipfs`].includes(a.type))
+  const accounts = allAccounts.value.filter(a => ![`ipfs`].includes(a.type))
   try {
     auto = {
       thumb: document.querySelector<HTMLImageElement>(`#output img`)?.src ?? ``,
@@ -118,7 +118,7 @@ onBeforeMount(() => {
 
 <template>
   <Dialog v-model:open="dialogVisible" @update:open="onUpdate">
-    <DialogTrigger>
+    <DialogTrigger as-child>
       <Button variant="outline" @click="prePost">
         发布
       </Button>

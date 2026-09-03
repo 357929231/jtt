@@ -110,33 +110,6 @@ function qiniuSubmit(formValues: any) {
   toast.success(`保存成功`)
 }
 
-// MinIO
-const minioOSSSchema = toTypedSchema(yup.object({
-  endpoint: yup.string().required(`Endpoint 不能为空`),
-  port: yup.string().optional(),
-  useSSL: yup.boolean().required(),
-  bucket: yup.string().required(`Bucket 不能为空`),
-  accessKey: yup.string().required(`AccessKey 不能为空`),
-  secretKey: yup.string().required(`SecretKey 不能为空`),
-}))
-
-const minioOSSConfig = ref(localStorage.getItem(`minioConfig`)
-  ? JSON.parse(localStorage.getItem(`minioConfig`)!)
-  : {
-      endpoint: ``,
-      port: ``,
-      useSSL: true,
-      bucket: ``,
-      accessKey: ``,
-      secretKey: ``,
-    })
-
-function minioOSSSubmit(formValues: any) {
-  localStorage.setItem(`minioConfig`, JSON.stringify(formValues))
-  minioOSSConfig.value = formValues
-  toast.success(`保存成功`)
-}
-
 // 公众号
 const isWebsite = ref(window.location.href.startsWith(`http`))
 
@@ -207,10 +180,6 @@ const options = [
   {
     value: `qiniu`,
     label: `七牛云`,
-  },
-  {
-    value: `minio`,
-    label: `MinIO`,
   },
   {
     value: `mp`,
@@ -643,82 +612,6 @@ function onDrop(e: DragEvent) {
                 target="_blank"
               >
                 如何使用七牛云 Kodo？
-              </Button>
-            </FormItem>
-
-            <FormItem>
-              <Button type="submit">
-                保存配置
-              </Button>
-            </FormItem>
-          </Form>
-        </TabsContent>
-
-        <TabsContent value="minio">
-          <Form :validation-schema="minioOSSSchema" :initial-values="minioOSSConfig" @submit="minioOSSSubmit">
-            <Field v-slot="{ field, errorMessage }" name="endpoint">
-              <FormItem label="Endpoint" required :error="errorMessage">
-                <Input
-                  v-bind="field"
-                  v-model="field.value"
-                  placeholder="如：play.min.io"
-                />
-              </FormItem>
-            </Field>
-
-            <Field v-slot="{ field, errorMessage }" name="port">
-              <FormItem label="Port" :error="errorMessage">
-                <Input
-                  v-bind="field"
-                  v-model="field.value"
-                  type="number"
-                  placeholder="如：9000，可不填，http 默认为 80，https 默认为 443"
-                />
-              </FormItem>
-            </Field>
-
-            <Field v-slot="{ field, errorMessage }" name="useSSL" type="boolean">
-              <FormItem label="UseSSL" required :error="errorMessage">
-                <Switch
-                  :checked="field.value"
-                  :name="field.name"
-                  @update:checked="field.onChange"
-                  @blur="field.onBlur"
-                />
-              </FormItem>
-            </Field>
-
-            <Field v-slot="{ field, errorMessage }" name="bucket">
-              <FormItem label="Bucket" required :error="errorMessage">
-                <Input
-                  v-bind="field"
-                  v-model="field.value"
-                  placeholder="如：doocs"
-                />
-              </FormItem>
-            </Field>
-
-            <Field v-slot="{ field, errorMessage }" name="accessKey">
-              <FormItem label="AccessKey" required :error="errorMessage">
-                <Input v-bind="field" v-model="field.value" placeholder="如：zhangsan" />
-              </FormItem>
-            </Field>
-
-            <Field v-slot="{ field, errorMessage }" name="secretKey">
-              <FormItem label="SecretKey" required :error="errorMessage">
-                <Input v-bind="field" v-model="field.value" placeholder="如：asdasdasd" />
-              </FormItem>
-            </Field>
-
-            <FormItem>
-              <Button
-                variant="link"
-                class="p-0"
-                as="a"
-                href="http://docs.minio.org.cn/docs/master/minio-client-complete-guide"
-                target="_blank"
-              >
-                如何使用 MinIO？
               </Button>
             </FormItem>
 

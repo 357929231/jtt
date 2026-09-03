@@ -53,7 +53,7 @@ const store = useStore()
 
 const { isDark, isCiteStatus, isCountStatus, output, primaryColor, isOpenPostSlider } = storeToRefs(store)
 
-const { toggleDark, editorRefresh, citeStatusChanged, countStatusChanged } = store
+const { toggleDark, citeStatusChanged, countStatusChanged } = store
 
 const copyMode = useStorage(addPrefix(`copyMode`), `txt`)
 const source = ref(``)
@@ -74,20 +74,25 @@ function copy() {
     }
 
     nextTick(async () => {
-      processClipboardContent(primaryColor.value)
-      const clipboardDiv = document.getElementById(`output`)!
-      clipboardDiv.focus()
-      window.getSelection()!.removeAllRanges()
-      const temp = clipboardDiv.innerHTML
+      const temp = processClipboardContent(output.value, primaryColor.value)
       if (copyMode.value === `txt`) {
+        const clipboardDiv = document.createElement(`div`)
+        clipboardDiv.contentEditable = `true`
+        clipboardDiv.style.position = `fixed`
+        clipboardDiv.style.left = `-9999px`
+        clipboardDiv.style.top = `0`
+        clipboardDiv.innerHTML = temp
+        document.body.appendChild(clipboardDiv)
+        clipboardDiv.focus()
+        window.getSelection()!.removeAllRanges()
         const range = document.createRange()
         range.setStartBefore(clipboardDiv.firstChild!)
         range.setEndAfter(clipboardDiv.lastChild!)
         window.getSelection()!.addRange(range)
         document.execCommand(`copy`)
         window.getSelection()!.removeAllRanges()
+        document.body.removeChild(clipboardDiv)
       }
-      clipboardDiv.innerHTML = output.value
       if (isBeforeDark) {
         nextTick(() => toggleDark())
       }
@@ -102,7 +107,6 @@ function copy() {
           : `已复制渲染后的内容到剪贴板，可直接到公众号后台粘贴。`,
       )
 
-      editorRefresh()
       emit(`endCopy`)
     })
   }, 350)
@@ -111,7 +115,7 @@ function copy() {
 
 <template>
   <header class="header-container h-15 flex items-center justify-between px-5">
-    <div class="space-x-2 flex">
+    <div class="space-x-2 header-menu-group flex">
       <Menubar class="menubar">
         <FileDropdown />
         <AIDropdown />
@@ -154,11 +158,15 @@ function copy() {
       </Menubar>
     </div>
 
-    <div class="space-x-2 flex">
+    <div class="space-x-2 header-action-group flex">
       <TooltipProvider :delay-duration="200">
         <Tooltip>
           <TooltipTrigger as-child>
-            <Button variant="outline" @click="isOpenPostSlider = !isOpenPostSlider">
+            <Button
+              variant="outline"
+              :aria-label="isOpenPostSlider ? '关闭内容管理' : '打开内容管理'"
+              @click="isOpenPostSlider = !isOpenPostSlider"
+            >
               <PanelLeftOpen v-show="!isOpenPostSlider" class="size-4" />
               <PanelLeftClose v-show="isOpenPostSlider" class="size-4" />
             </Button>
@@ -169,19 +177,19 @@ function copy() {
         </Tooltip>
       </TooltipProvider>
 
-      <Button variant="outline" @click="toggleDark()">
+      <Button variant="outline" :aria-label="isDark ? '切换到浅色模式' : '切换到深色模式'" @click="toggleDark()">
         <Moon v-show="isDark" class="size-4" />
         <Sun v-show="!isDark" class="size-4" />
       </Button>
 
-      <div class="bg-background space-x-1 text-background-foreground mx-2 flex items-center border rounded-md">
+      <div class="bg-background copy-action-group space-x-1 text-background-foreground mx-2 flex items-center border rounded-md">
         <Button variant="ghost" class="shadow-none" @click="copy">
           复制
         </Button>
         <Separator orientation="vertical" class="h-5" />
         <DropdownMenu v-model="copyMode">
           <DropdownMenuTrigger as-child>
-            <Button variant="ghost" class="px-2 shadow-none">
+            <Button variant="ghost" class="px-2 shadow-none" aria-label="选择复制格式">
               <ChevronDownIcon class="text-secondary-foreground h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -204,11 +212,11 @@ function copy() {
 
       <PostInfo />
 
-      <Button variant="outline" @click="store.isOpenRightSlider = !store.isOpenRightSlider">
+      <Button variant="outline" aria-label="打开样式设置" @click="store.isOpenRightSlider = !store.isOpenRightSlider">
         <Settings class="size-4" />
       </Button>
 
-      <Button variant="outline" @click="showAIStyleDialog = true">
+      <Button variant="outline" aria-label="AI 样式助手" @click="showAIStyleDialog = true">
         <Wand2 class="size-4" />
       </Button>
 
@@ -233,6 +241,42 @@ function copy() {
 <style lang="less" scoped>
 .menubar {
   user-select: none;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background));
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.header-container {
+  gap: 12px;
+  min-width: 0;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--background) / 0.96);
+  box-shadow: 0 1px 0 hsl(var(--background)) inset;
+  position: relative;
+  z-index: 10;
+}
+
+.header-menu-group {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.header-action-group {
+  align-items: center;
+  justify-content: flex-end;
+  min-width: max-content;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.35);
+  padding: 4px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.copy-action-group {
+  flex-shrink: 0;
+  border-color: hsl(var(--border));
+  background: hsl(var(--background));
 }
 
 kbd {
@@ -248,22 +292,34 @@ kbd {
   .header-container {
     padding: 8px;
     height: auto;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    flex-wrap: wrap;
     gap: 8px;
+    align-items: stretch;
+  }
 
-    &::-webkit-scrollbar {
-      display: none;
-    }
+  .header-menu-group,
+  .header-action-group {
+    width: 100%;
+  }
+
+  .header-menu-group {
+    overflow: hidden;
+  }
+
+  .header-action-group {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px;
+    min-width: 0;
+    padding: 6px;
   }
 
   .menubar {
     display: flex;
     gap: 4px;
     padding: 0;
+    width: 100%;
+    overflow: hidden;
 
     :deep(.MenubarTrigger) {
       padding: 0 8px;
@@ -273,11 +329,17 @@ kbd {
     }
   }
 
-  .space-x-2 {
+  .header-action-group.space-x-2 {
     display: flex;
     gap: 4px;
     margin: 0;
-    flex-shrink: 0;
+  }
+
+  .copy-action-group {
+    margin: 0;
+    flex: 1 1 auto;
+    justify-content: center;
+    min-width: 96px;
   }
 
   :deep(.Button) {

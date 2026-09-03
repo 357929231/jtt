@@ -4,6 +4,9 @@ import type { ComponentPublicInstance } from 'vue'
 import defaultMarkdown from '@/assets/example/markdown.md?raw'
 import MarkdownTemplateDialog from '@/components/CodemirrorEditor/EditorHeader/MarkdownTemplateDialog.vue'
 import RewriteDialog from '@/components/CodemirrorEditor/RewriteDialog.vue'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { altKey, altSign, ctrlKey, shiftKey, shiftSign } from '@/config'
 import { type AIStreamOptions, streamAIContent } from '@/services/ai'
 import { useAIStore, useDisplayStore, useStore } from '@/stores'
@@ -44,6 +47,10 @@ const rewriteSelection = ref(``)
 const showTemplateDialog = ref(false)
 const showControls = ref(true)
 const isShowClearConfirmDialog = ref(false)
+const imageActionPrompt = ref(``)
+const imageActionFile = ref<{ base64: string, mimeType: string } | null>(null)
+const isImageActionDialogOpen = ref(false)
+const pendingImageAction = ref<`generate` | `edit` | `recognize` | ``>(``)
 
 // 添加移动端视图控制
 const isMobileView = ref(false)
@@ -369,18 +376,6 @@ async function handleChange(instance: CodeMirror.Editor, _changeObj: CodeMirror.
 
       // 强制更新预览内容
       await store.editorRefresh()
-
-      // 确保预览区域内容已完全更新
-      await nextTick()
-
-      // 触发预览区域的重新渲染
-      if (preview.value) {
-        const currentScroll = preview.value.scrollTop
-        preview.value.style.display = `none`
-        void preview.value.offsetHeight // 触发重排
-        preview.value.style.display = ``
-        preview.value.scrollTop = currentScroll
-      }
     }
     catch (error) {
       console.error(`更新预览内容时出错:`, error)
@@ -500,6 +495,124 @@ function uploadImage(file: File, cb?: { (url: any): void, (arg0: unknown): void 
     .finally(() => {
       isImgLoading.value = false
     })
+}
+
+async function readFileAsBase64(file: File) {
+  return new Promise<{ base64: string, mimeType: string }>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === `string` ? reader.result : ``
+      resolve({
+        base64: result.split(`,`)[1] || ``,
+        mimeType: file.type || `image/png`,
+      })
+    }
+    reader.onerror = () => reject(new Error(`读取图片失败`))
+    reader.readAsDataURL(file)
+  })
+}
+
+async function chooseImageForAI() {
+  return new Promise<{ base64: string, mimeType: string } | null>((resolve) => {
+    const input = document.createElement(`input`)
+    input.type = `file`
+    input.accept = `image/*`
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) {
+        resolve(null)
+        return
+      }
+      resolve(await readFileAsBase64(file))
+    }
+    input.click()
+  })
+}
+
+async function generateImageWithAI() {
+  imageActionPrompt.value = imageActionPrompt.value || `生成一张与文章内容匹配的配图`
+  pendingImageAction.value = `generate`
+  isImageActionDialogOpen.value = true
+}
+
+async function executeGenerateImageWithAI() {
+  const payload = await aiStore.generateImage({ prompt: imageActionPrompt.value }) as any
+  const image = payload.data?.[0]?.url || (payload.data?.[0]?.b64_json ? `data:image/png;base64,${payload.data[0].b64_json}` : ``)
+  if (image) {
+    uploaded(image)
+  }
+}
+
+async function editImageWithAI() {
+  const selected = await chooseImageForAI()
+  if (!selected) {
+    return
+  }
+  imageActionFile.value = selected
+  imageActionPrompt.value = `优化这张图的视觉效果并保留主体`
+  pendingImageAction.value = `edit`
+  isImageActionDialogOpen.value = true
+}
+
+async function executeEditImageWithAI() {
+  if (!imageActionFile.value) {
+    return
+  }
+  const payload = await aiStore.editImage({
+    prompt: imageActionPrompt.value,
+    image: imageActionFile.value.base64,
+    mimeType: imageActionFile.value.mimeType,
+  }) as any
+  const image = payload.data?.[0]?.url || (payload.data?.[0]?.b64_json ? `data:image/png;base64,${payload.data[0].b64_json}` : ``)
+  if (image) {
+    uploaded(image)
+  }
+}
+
+async function recognizeImageWithAI() {
+  const selected = await chooseImageForAI()
+  if (!selected) {
+    return
+  }
+  imageActionFile.value = selected
+  imageActionPrompt.value = `请识别图片中的文字、主体和关键信息`
+  pendingImageAction.value = `recognize`
+  isImageActionDialogOpen.value = true
+}
+
+async function executeRecognizeImageWithAI() {
+  if (!imageActionFile.value) {
+    return
+  }
+  const payload = await aiStore.recognizeMedia({
+    model: aiStore.getCapabilityModel(`mediaRecognition`) || aiStore.defaults.chatModel,
+    inputText: imageActionPrompt.value,
+    media: [{ mimeType: imageActionFile.value.mimeType, data: imageActionFile.value.base64 }],
+  }) as any
+  const text = payload.candidates?.[0]?.content?.parts?.map((part: any) => part.text).filter(Boolean).join(``)
+    || payload.choices?.[0]?.message?.content
+    || ``
+  if (text && editor.value) {
+    editor.value.replaceSelection(`\n${text}\n`)
+  }
+}
+
+async function confirmImageAction() {
+  try {
+    if (pendingImageAction.value === `generate`) {
+      await executeGenerateImageWithAI()
+    }
+    else if (pendingImageAction.value === `edit`) {
+      await executeEditImageWithAI()
+    }
+    else if (pendingImageAction.value === `recognize`) {
+      await executeRecognizeImageWithAI()
+    }
+  }
+  finally {
+    isImageActionDialogOpen.value = false
+    pendingImageAction.value = ``
+  }
 }
 
 // 监听暗色模式并更新编辑器
@@ -889,9 +1002,11 @@ async function continueWithAI() {
     editor.value.setCursor(newPosition)
 
     // 使用streamAIContent来实现流式输出
+    let hasGeneratedContent = false
     streamAIContent({
       prompt,
       onToken: (token: string) => {
+        hasGeneratedContent = true
         // 每收到一个token就立即更新编辑器
         editor.value?.replaceRange(token, newPosition)
         // 更新插入位置
@@ -908,10 +1023,16 @@ async function continueWithAI() {
       },
       onError: (error: Error) => {
         toast.error(error.message)
+        if (!hasGeneratedContent) {
+          const fallbackText = `\n【AI 续写失败：${error.message}】\n请在 AI 提供商设置中切换到当前 Key 可用的模型后重试。\n`
+          editor.value?.replaceRange(fallbackText, newPosition)
+        }
       },
       onFinish: () => {
         // 完成后添加完成标记
-        editor.value?.replaceRange(`\n\n【内容编写完成】\n`, newPosition)
+        if (hasGeneratedContent) {
+          editor.value?.replaceRange(`\n\n【内容编写完成】\n`, newPosition)
+        }
       },
     } satisfies AIStreamOptions)
   }
@@ -1602,11 +1723,11 @@ function handlePreviewBlur() {
       @end-copy="endCopy"
     />
     <main class="container-main flex flex-1 flex-col">
-      <div class="container-main-section border-radius-10 relative flex flex-1 overflow-hidden border-1">
-        <PostSlider />
+      <div class="editor-workspace-shell container-main-section border-radius-10 relative flex flex-1 overflow-hidden border-1">
+        <PostSlider class="content-rail" />
         <div
           ref="codeMirrorWrapper"
-          class="codeMirror-wrapper"
+          class="editor-pane codeMirror-wrapper"
           :class="{
             'order-1': !store.isEditOnLeft && !isMobileView,
             'border-r': store.isEditOnLeft && !isMobileView,
@@ -1652,6 +1773,15 @@ function handlePreviewBlur() {
               <ContextMenuItem inset @click="toggleShowUploadImgDialog()">
                 上传图片
               </ContextMenuItem>
+              <ContextMenuItem inset @click="generateImageWithAI">
+                AI生成配图
+              </ContextMenuItem>
+              <ContextMenuItem inset @click="editImageWithAI">
+                AI编辑图片
+              </ContextMenuItem>
+              <ContextMenuItem inset @click="recognizeImageWithAI">
+                AI识别图片
+              </ContextMenuItem>
               <ContextMenuItem inset @click="toggleShowInsertFormDialog()">
                 插入表格
               </ContextMenuItem>
@@ -1679,7 +1809,7 @@ function handlePreviewBlur() {
         <div
           id="preview"
           ref="preview"
-          class="preview-wrapper flex-1 p-5"
+          class="preview-pane preview-wrapper flex-1 p-5"
           :class="{
             'hidden': isMobileView && !showPreview,
             'is-transitioning': isTransitioning,
@@ -1708,8 +1838,8 @@ function handlePreviewBlur() {
           </div>
           <BackTop target="preview" :right="40" :bottom="40" />
         </div>
-        <CssEditor class="order-2 flex-1" />
-        <RightSlider class="order-2" />
+        <CssEditor class="css-editor-pane order-2 flex-1" />
+        <RightSlider class="settings-pane order-2" />
       </div>
       <footer
         class="text-muted-foreground h-[30px] flex select-none items-center justify-end text-[12px]"
@@ -1749,6 +1879,30 @@ function handlePreviewBlur() {
       <MarkdownTemplateDialog
         v-model:show="showTemplateDialog"
       />
+
+      <Dialog v-model:open="isImageActionDialogOpen">
+        <DialogContent class="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {{ pendingImageAction === 'generate' ? 'AI生成配图' : pendingImageAction === 'edit' ? 'AI编辑图片' : 'AI识别图片' }}
+            </DialogTitle>
+            <DialogDescription>
+              {{ pendingImageAction === 'generate' ? '输入图片生成提示词。' : pendingImageAction === 'edit' ? '输入图片编辑提示词。' : '输入图片识别提示词。' }}
+            </DialogDescription>
+          </DialogHeader>
+          <div class="grid gap-3">
+            <Input v-model="imageActionPrompt" placeholder="请输入提示词" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" @click="isImageActionDialogOpen = false">
+              取消
+            </Button>
+            <Button @click="confirmImageAction">
+              确认
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div
         v-if="isMobileView && showControls"
@@ -1852,13 +2006,17 @@ function handlePreviewBlur() {
 
 .container-main {
   overflow: hidden;
-  padding: 0 20px;
+  padding: 0 20px 12px;
+  min-width: 0;
+  background: hsl(var(--muted) / 0.28);
 }
 
 #output-wrapper {
   position: relative;
   user-select: text;
   height: 100%;
+  width: 100%;
+  min-width: 0;
 }
 
 .loading-mask {
@@ -1893,11 +2051,67 @@ function handlePreviewBlur() {
 .codeMirror-wrapper,
 .preview-wrapper {
   height: 100%;
+  min-width: 0;
   will-change: transform, opacity;
 }
 
+.editor-workspace-shell {
+  min-width: 0;
+  gap: 1px;
+  border-color: hsl(var(--border));
+  background: hsl(var(--border));
+  box-shadow:
+    0 18px 48px rgba(15, 23, 42, 0.08),
+    0 1px 0 hsl(var(--background) / 0.8) inset;
+}
+
+.editor-pane,
+.preview-pane {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 320px;
+  background: hsl(var(--background));
+}
+
+.editor-pane::before,
+.preview-pane::before {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 3;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background) / 0.92);
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 5px 8px;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+.editor-pane::before {
+  content: '编辑';
+}
+
+.preview-pane::before {
+  content: '预览';
+}
+
+.css-editor-pane {
+  background: hsl(var(--background));
+}
+
+.content-rail,
+.settings-pane,
+.css-editor-pane {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .codeMirror-wrapper {
-  overflow-x: auto;
+  overflow: hidden;
   position: relative;
 
   &.prevent-touch {
@@ -1987,29 +2201,31 @@ function handlePreviewBlur() {
 
 .preview-wrapper {
   height: 100%;
-  overflow-y: auto;
-  background-color: transparent;
+  overflow: auto;
+  background: hsl(var(--muted) / 0.26);
   width: 100%;
   padding: 0;
   box-sizing: border-box;
   border: none;
 
   .preview {
-    width: 100%;
+    width: min(100%, 677px);
+    max-width: 100%;
     height: 100%;
-    margin: 0;
-    background-color: transparent;
-    box-shadow: none;
+    margin: 0 auto;
+    background-color: hsl(var(--background));
+    box-shadow: 0 0 0 1px hsl(var(--border));
     border: none;
 
     #output {
       width: 100%;
+      max-width: 100%;
       min-height: 100%;
       height: auto;
       padding: 20px;
       box-sizing: border-box;
       border: none;
-      background-color: transparent;
+      background-color: hsl(var(--background));
       color: var(--foreground);
     }
   }
@@ -2017,6 +2233,7 @@ function handlePreviewBlur() {
 
 .markdown-preview {
   width: 100%;
+  max-width: 100%;
   min-height: 100%;
   height: auto;
   overflow: visible;
@@ -2057,6 +2274,45 @@ function handlePreviewBlur() {
       -moz-user-modify: read-write;
     }
   }
+}
+
+:deep(.markdown-preview img),
+:deep(.markdown-preview video),
+:deep(.markdown-preview canvas),
+:deep(.markdown-preview svg) {
+  max-width: 100%;
+  height: auto;
+}
+
+:deep(.markdown-preview section) {
+  max-width: 100%;
+}
+
+:deep(.markdown-preview pre) {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+:deep(.markdown-preview pre code) {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+  overflow-x: visible;
+  white-space: pre;
+}
+
+:deep(.markdown-preview table) {
+  width: max-content !important;
+  min-width: 100%;
+  max-width: none;
+}
+
+:deep(.markdown-preview .preview-table) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .mobile-controls {
@@ -2220,11 +2476,24 @@ function handlePreviewBlur() {
 }
 
 @media (max-width: 768px) {
+  .container-main {
+    padding: 0 8px;
+  }
+
   .container-main-section {
     flex-direction: column;
     position: relative;
-    height: calc(100vh - 200px);
+    height: calc(100vh - 176px);
     padding-bottom: 80px;
+  }
+
+  .content-rail,
+  .css-editor-pane {
+    display: none;
+  }
+
+  .settings-pane {
+    display: block;
   }
 
   .codeMirror-wrapper,
@@ -2266,8 +2535,8 @@ function handlePreviewBlur() {
       min-height: 100% !important;
       width: 100% !important;
       font-size: 15px;
-      padding: 12px;
-      background-color: var(--background);
+      padding: 34px 12px 12px;
+      background-color: hsl(var(--background));
       overflow-x: hidden;
       touch-action: pan-y;
       position: relative;
@@ -2280,7 +2549,7 @@ function handlePreviewBlur() {
   }
 
   .preview-wrapper {
-    padding: 12px;
+    padding: 34px 12px 12px;
     overflow-y: auto;
     margin-left: 0;
     transform: translateX(0);
@@ -2297,8 +2566,8 @@ function handlePreviewBlur() {
       width: 100%;
       max-width: 100%;
       margin: 0;
-      padding: 16px;
-      background-color: var(--background);
+      padding: 0;
+      background-color: hsl(var(--background));
       min-height: 100%;
       box-sizing: border-box;
       word-wrap: break-word;
@@ -2310,6 +2579,7 @@ function handlePreviewBlur() {
     height: auto;
     min-height: 100%;
     width: 100%;
+    max-width: 100%;
     overflow-x: hidden;
   }
 

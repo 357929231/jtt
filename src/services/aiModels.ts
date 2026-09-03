@@ -1,10 +1,34 @@
-import axios from 'axios'
+import { AIClient } from './aiClient'
 
 export interface Model {
   id: string
   name: string
   maxTokens: number
   available: boolean
+}
+
+export function normalizeModelList(payload: any): Model[] {
+  const rawModels = Array.isArray(payload?.data)
+    ? payload.data
+    : Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.models)
+        ? payload.models
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : []
+
+  return rawModels
+    .map((model: any) => {
+      const id = model?.id || model?.model_id || model?.name || ``
+      return {
+        id,
+        name: id,
+        maxTokens: Number(model?.max_tokens || model?.maxTokens || 0),
+        available: Boolean(id),
+      }
+    })
+    .filter((model: Model) => model.id)
 }
 
 export class AIModelsService {
@@ -22,173 +46,140 @@ export class AIModelsService {
     return AIModelsService.instance
   }
 
-  public async fetchAvailableModels(): Promise<Model[]> {
+  public async fetchAvailableModels(options?: { fallbackToDefaults?: boolean }): Promise<Model[]> {
     try {
-      if (!this.apiKey) {
-        console.warn(`API Key未设置，将返回默认模型列表`)
-        return this.getDefaultModels()
-      }
-
-      if (!this.baseUrl || this.baseUrl === `YOUR_API_BASE_URL`) {
-        console.warn(`API地址未设置，将返回默认模型列表`)
-        return this.getDefaultModels()
-      }
-
-      const response = await axios.get(`${this.baseUrl}/v1/models`, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': `application/json`,
-          'Accept': `application/json`,
-        },
-        // 移除可能导致CORS问题的配置
-        withCredentials: false,
-        timeout: 30000, // 增加超时时间到30秒
-      })
-
-      // 检查响应状态
-      console.log(`API响应状态:`, {
-        status: response.status,
-        statusText: response.statusText,
-      })
-
-      // 检查响应头
-      console.log(`API响应头:`, {
-        'content-type': response.headers[`content-type`],
-        'x-request-id': response.headers[`x-request-id`],
-      })
-
-      console.log(`API返回的原始数据:`, JSON.stringify(response.data, null, 2))
-      console.log(`API返回数据类型:`, typeof response.data)
-      console.log(`API返回数据结构:`, Object.keys(response.data))
-
-      // 尝试解析不同的数据格式
-      let modelList: any[] = []
-
-      if (response.data?.data && Array.isArray(response.data.data)) {
-        // OpenAI 标准格式
-        console.log(`使用OpenAI标准格式解析，data字段内容:`, JSON.stringify(response.data.data, null, 2))
-        modelList = response.data.data
-      }
-      else if (Array.isArray(response.data)) {
-        // 直接数组格式
-        console.log(`使用直接数组格式解析，数组内容:`, JSON.stringify(response.data, null, 2))
-        modelList = response.data
-      }
-      else if (typeof response.data === `object`) {
-        // 对象格式，尝试提取models字段
-        console.log(`使用对象格式解析，尝试提取models/items字段:`, {
-          hasModels: `models` in response.data,
-          hasItems: `items` in response.data,
-          availableFields: Object.keys(response.data),
-        })
-        modelList = response.data.models || response.data.items || []
-      }
-
-      console.log(`解析后的原始模型列表:`, JSON.stringify(modelList, null, 2))
-
-      // 如果获取到了模型列表
-      if (modelList && modelList.length > 0) {
-        const processedModels = modelList.map((model: any) => {
-          // 尝试从不同的属性中获取数据
-          const id = model.id || model.model_id || model.name || ``
-          // 保持原始格式，不做格式化
-          const name = id
-          // 根据模型ID设置默认的maxTokens
-          let maxTokens = model.max_tokens || model.maxTokens || 0
-          if (maxTokens === 0) {
-            if (id.includes(`gpt-4`)) {
-              maxTokens = 8192
-            }
-            else if (id.includes(`gpt-3.5`)) {
-              maxTokens = 4096
-            }
-          }
-
-          return {
-            id,
-            name,
-            maxTokens,
-            available: true,
-          }
-        }).filter(model => model.id) // 过滤掉没有id的模型
-
-        console.log(`处理后的模型列表:`, processedModels)
-
-        if (processedModels.length > 0) {
-          this.models = processedModels
-          return this.models
+      if (!this.apiKey || !this.baseUrl || this.baseUrl === `YOUR_API_BASE_URL`) {
+        if (options?.fallbackToDefaults === false) {
+          throw new Error(`请先设置有效的 API 地址和 API Key`)
         }
+        this.models = this.getDefaultModels()
+        return this.models
       }
 
-      console.log(`未获取到有效的模型列表，将使用默认模型`)
-      this.models = this.getDefaultModels()
-      console.log(`使用默认模型列表:`, this.models)
-
+      const client = new AIClient(this.baseUrl, this.apiKey)
+      const payload = await client.listModels()
+      const normalized = normalizeModelList(payload)
+      this.models = normalized.length > 0 ? normalized : this.getDefaultModels()
       return this.models
     }
     catch (error) {
-      if (axios.isAxiosError(error)) {
-        const status = error.response?.status
-        const responseData = error.response?.data
-        let errorMessage = `获取模型列表失败`
-
-        console.error(`API请求详细信息:`, {
-          请求URL: `${this.baseUrl}/v1/models`,
-          状态码: status,
-          响应数据: responseData,
-          错误类型: error.name,
-          错误信息: error.message,
-        })
-
-        if (status === 401) {
-          errorMessage = `API Key 无效或格式错误`
-        }
-        else if (status === 403) {
-          // 检查是否是 CORS 错误
-          const isCorsError = !error.response || error.message.includes(`CORS`) || error.message.includes(`Network Error`)
-
-          if (isCorsError) {
-            console.warn(`检测到CORS错误，将返回默认模型列表`)
-            return this.getDefaultModels()
-          }
-          else {
-            errorMessage = `API访问被拒绝，请检查：\n1. API Key 是否正确\n2. 是否有访问权限\n3. API地址是否正确：${this.baseUrl}`
-          }
-        }
-        else if (status === 404) {
-          errorMessage = `API接口不存在，请检查API地址是否正确：${this.baseUrl}`
-        }
-        else if (status === 429) {
-          errorMessage = `请求过于频繁，请稍后再试`
-        }
-        else if (!status) {
-          console.warn(`网络错误，将返回默认模型列表`)
-          return this.getDefaultModels()
-        }
-
-        // 对于其他错误，返回默认模型列表
-        console.warn(`${errorMessage}，将返回默认模型列表`)
-        return this.getDefaultModels()
+      console.error(`获取模型列表失败:`, error)
+      if (options?.fallbackToDefaults === false) {
+        throw error
       }
-      else {
-        console.error(`未知错误:`, error)
-        return this.getDefaultModels()
-      }
+      this.models = this.getDefaultModels()
+      return this.models
     }
   }
 
   private getDefaultModels(): Model[] {
     return [
       {
-        id: `gpt-3.5-turbo`,
-        name: `GPT-3.5 Turbo`,
-        maxTokens: 4096,
+        id: `gpt-4o-mini`,
+        name: `gpt-4o-mini`,
+        maxTokens: 16384,
         available: true,
       },
       {
-        id: `gpt-4`,
-        name: `GPT-4`,
-        maxTokens: 8192,
+        id: `text-embedding-3-small`,
+        name: `text-embedding-3-small`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `dall-e-3`,
+        name: `dall-e-3`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `gpt-image-1`,
+        name: `gpt-image-1`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `gpt-image-1-mini`,
+        name: `gpt-image-1-mini`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `chatgpt-image-latest`,
+        name: `chatgpt-image-latest`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `imagen-4.0-generate-001`,
+        name: `imagen-4.0-generate-001`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `imagen-4.0-fast-generate-001`,
+        name: `imagen-4.0-fast-generate-001`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `imagen-4.0-ultra-generate-001`,
+        name: `imagen-4.0-ultra-generate-001`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `gemini-2.5-flash`,
+        name: `gemini-2.5-flash`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `gemini-embedding-001`,
+        name: `gemini-embedding-001`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `jina-reranker-v2-base-multilingual`,
+        name: `jina-reranker-v2-base-multilingual`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `rerank-multilingual-v3.0`,
+        name: `rerank-multilingual-v3.0`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `omni-moderation-latest`,
+        name: `omni-moderation-latest`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `tts-1`,
+        name: `tts-1`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `gpt-4o-mini-transcribe`,
+        name: `gpt-4o-mini-transcribe`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `sora-2`,
+        name: `sora-2`,
+        maxTokens: 0,
+        available: true,
+      },
+      {
+        id: `gpt-realtime`,
+        name: `gpt-realtime`,
+        maxTokens: 0,
         available: true,
       },
     ]
@@ -199,23 +190,11 @@ export class AIModelsService {
   }
 
   public setBaseUrl(url: string): void {
-    if (!url) {
-      console.warn(`API地址为空，将使用默认地址`)
-      return
-    }
-    const trimmedUrl = url.trim()
-    console.log(`设置API地址:`, trimmedUrl)
-    this.baseUrl = trimmedUrl
+    this.baseUrl = url.trim()
   }
 
   public setApiKey(key: string): void {
-    if (!key) {
-      console.warn(`API Key为空`)
-      return
-    }
-    const trimmedKey = key.trim()
-    console.log(`设置API Key`)
-    this.apiKey = trimmedKey
+    this.apiKey = key.trim()
   }
 }
 

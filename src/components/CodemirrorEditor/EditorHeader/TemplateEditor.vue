@@ -282,8 +282,8 @@ textarea {
   /* 使用正则表达式匹配中文字符并添加背景色 */
   -webkit-text-emphasis: dot;
   text-emphasis: dot;
-  -webkit-text-emphasis-position: under;
-  text-emphasis-position: under;
+  -webkit-text-emphasis-position: under left;
+  text-emphasis-position: under left;
 }
 
 /* 中文字符特殊样式 */
